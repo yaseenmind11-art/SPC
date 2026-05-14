@@ -4,93 +4,76 @@ import pandas as pd
 import numpy as np
 
 # --- CONFIGURATION ---
-st.set_page_config(layout="wide", page_title="SPC: Open World Sim")
+st.set_page_config(layout="wide", page_title="SPC 3D Open World")
 
-# --- 1. GAME STATE (The 'GTA' Persistence) ---
+# --- 1. GAME STATE ---
 if 'game' not in st.session_state:
     st.session_state.game = {
-        "lat": 30.0444, "lon": 31.2357, # Starting in Cairo, Egypt
+        "lat": 30.0444, "lon": 31.2357, # Starting in Cairo
         "alt": 0, "speed": 0, "heading": 0,
-        "pitch": 0, "mode": "Car"
+        "mode": "Car"
     }
 
-# --- 2. THE PHYSICS ENGINE (GeoFS & NFS Logic) ---
-def update_physics():
-    g = st.session_state.game
-    
-    # Airspeed/Throttle Handling
-    speed_ms = g["speed"] * 0.27778 # Convert km/h to m/s
-    
-    if g["mode"] == "Plane":
-        # GeoFS Logic: Lift depends on speed
-        if g["speed"] > 150: # Takeoff speed
-            g["alt"] += (g["pitch"] * (g["speed"] / 100))
-        # Gravity: If you are in the air, you fall slowly
-        if g["alt"] > 0:
-            g["alt"] -= 1 # Constant downward pull
-            if g["alt"] < 0: g["alt"] = 0
-            
-    else: # NFS Car Mode
-        g["alt"] = 0 # Car stays on ground
-        g["pitch"] = 0 # No vertical tilting
-        
-    # Movement Math: Calculate next position based on Heading
-    rad = np.radians(g["heading"])
-    # 0.00001 is a coordinate scaling factor to make movement feel real
-    g["lat"] += (speed_ms * 0.00001) * np.cos(rad)
-    g["lon"] += (speed_ms * 0.00001) * np.sin(rad)
-
-# --- 3. CONTROLS (The Dashboard) ---
-st.sidebar.title("🎮 SPC Controller")
 g = st.session_state.game
 
-# Vehicle Switch
-new_mode = st.sidebar.selectbox("Select Vehicle Type", ["Car", "Plane"], index=0 if g["mode"] == "Car" else 1)
-g["mode"] = new_mode
+# --- 2. CONTROLS ---
+st.sidebar.title("🎮 SPC 3D Controller")
+g["mode"] = st.sidebar.selectbox("Vehicle Type", ["Car", "Plane"])
 
-# Drive/Flight Controls
-g["speed"] = st.sidebar.slider("Throttle (km/h)", 0, 400, g["speed"])
+# Use sliders to control movement
+g["speed"] = st.sidebar.slider("Throttle (km/h)", 0, 300, g["speed"])
 g["heading"] = st.sidebar.slider("Steering / Heading", 0, 360, g["heading"])
 
-if g["mode"] == "Plane":
-    g["pitch"] = st.sidebar.slider("Elevator (Pitch)", -15, 15, g["pitch"])
-
-# Trigger update
 if st.sidebar.button("APPLY MOVEMENT"):
-    update_physics()
+    rad = np.radians(g["heading"])
+    # Move the vehicle based on speed and heading
+    move_factor = (g["speed"] * 0.00001)
+    g["lat"] += move_factor * np.cos(rad)
+    g["lon"] += move_factor * np.sin(rad)
+    
+    # Simple altitude logic for 'Plane' mode
+    if g["mode"] == "Plane" and g["speed"] > 150:
+        g["alt"] += 10
+    elif g["mode"] == "Car":
+        g["alt"] = 0
 
-# --- 4. RENDER THE 3D WORLD (Pydeck) ---
-view_state = pdk.ViewState(
-    latitude=g["lat"],
-    longitude=g["lon"],
-    zoom=16,
-    pitch=45,
-    bearing=g["heading"]
-)
+# --- 3. THE 3D ENGINE (GeoFS + GTA Style) ---
 
-# Using a public drone model from GitHub as the vehicle
-# This replaces the need for a login/email download
-obj_data = pd.DataFrame([g])
+# Link to a public 3D car model (GLB format)
+# This model represents the 'NFS' car in the world
+VEHICLE_MODEL = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMilkTruck/glTF-Binary/CesiumMilkTruck.glb"
+
+# Create a data frame for the 3D model position
+df = pd.DataFrame([g])
+
+# ScenegraphLayer renders the actual 3D body of the car/plane
 vehicle_layer = pdk.Layer(
     "ScenegraphLayer",
-    obj_data,
-    get_scene="https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Drone/glTF-Binary/Drone.glb",
+    df,
+    get_scene=VEHICLE_MODEL,
     get_position="[lon, lat, alt]",
-    get_orientation="[0, -heading, 90]", # Rotation to align with map
-    size_scale=15,
+    get_orientation="[0, -heading, 90]",
+    size_scale=15, # Adjust size so the car is visible
     _lighting="pbr",
 )
 
+# ViewState creates the 3D perspective
+view_state = pdk.ViewState(
+    latitude=g["lat"],
+    longitude=g["lon"],
+    zoom=19,      # High zoom for street-level view
+    pitch=60,     # 60-degree tilt for 3D perspective
+    bearing=g["heading"] # Camera follows the vehicle direction
+)
+
+# Render the 3D Deck
 r = pdk.Deck(
     layers=[vehicle_layer],
     initial_view_state=view_state,
-    map_style="light", # CARTO free style
+    map_style="mapbox://styles/mapbox/satellite-v9", # Satellite style for GeoFS look
 )
 
 st.pydeck_chart(r)
 
-# --- 5. HUD (Heads-Up Display) ---
-c1, c2, c3 = st.columns(3)
-c1.metric("Altitude", f"{round(g['alt'], 1)} m")
-c2.metric("Speed", f"{g['speed']} km/h")
-c3.metric("Heading", f"{g['heading']}°")
+# HUD Display
+st.write(f"**Mode:** {g['mode']} | **Speed:** {g['speed']} km/h | **Altitude:** {g['alt']}m")
