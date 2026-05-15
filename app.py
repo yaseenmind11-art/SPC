@@ -1,13 +1,11 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(layout="wide", page_title="SPC Ultra-Detail")
+st.set_page_config(layout="wide", page_title="SPC GeoFS Pro")
 
-# Your Verified Cesium Token
 CESIUM_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI3MjUwMTRjMC1mZmNjLTRiMGMtOTQ3Zi0zYjdhYTcxZWUyZWUiLCJpZCI6NDMxNjU4LCJpc3MiOiJodHRwczovL2lvbi5jZXNpdW0uY29tIiwiYXVkIjoidW5kZWZpbmVkX2RlZmF1bHQiLCJpYXQiOjE3Nzg3NzkwNzd9.Z6NvuvwPdtghJiUM9fcfIe1SaZXMBNu8tN_pCQTelxw"
 
-st.title("🏙️ SPC: Photorealistic 3D World")
-st.info("WASD to Drive | Click map once to start | Real Textures Active")
+st.title("🏎️ SPC: High-Detail Driving Sim")
 
 cesium_html = f"""
 <!DOCTYPE html>
@@ -31,49 +29,53 @@ cesium_html = f"""
             sceneModePicker: false, infoBox: false
         }});
 
-        // --- THE "PAID" DETAIL FIX ---
-        // This adds the Google Photorealistic Tiles (Windows, Balconies, Textures)
-        async function addPhotorealism() {{
-            try {{
-                const tileset = await Cesium.createGooglePhotorealistic3DTileset();
-                viewer.scene.primitives.add(tileset);
-            }} catch (e) {{
-                // Fallback to OSM if Google Tiles are not enabled in your dashboard
-                viewer.scene.primitives.add(Cesium.createOsmBuildings());
-            }}
-        }}
-        addPhotorealism();
+        // --- THE "BETTER" TEXTURE FIX ---
+        // This style adds "Fake" windows and textures to the OSM buildings
+        const buildings = viewer.scene.primitives.add(Cesium.createOsmBuildings({{
+            style: new Cesium.Cesium3DTileStyle({{
+                color: {{
+                    conditions: [
+                        ["${{feature['building']}} === 'residential'", "color('whitesmoke')"],
+                        ["${{feature['building']}} === 'commercial'", "color('lightsteelblue')"],
+                        ["true", "color('grey')"]
+                    ]
+                }}
+            }})
+        }}));
 
-        // Driving State
+        // Physics State
         let lon = 31.2357; 
         let lat = 30.0444;
         let heading = 0;
-        let velocity = 0;
+        let speed = 0;
 
-        // Fixed-Size Sports Car
+        // FIXED SIZE CAR (Scale 1.0 = Real World Size)
         const carEntity = viewer.entities.add({{
             position: Cesium.Cartesian3.fromDegrees(lon, lat, 0),
             model: {{ 
                 uri: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMilkTruck/glTF-Binary/CesiumMilkTruck.glb',
-                scale: 1.5,
+                scale: 2.0, 
                 heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
             }}
         }});
 
         viewer.trackedEntity = carEntity;
 
-        // Physics Loop
-        document.addEventListener('keydown', (e) => {{
-            if (e.code === 'KeyW') velocity += 0.000005;
-            if (e.code === 'KeyS') velocity -= 0.000005;
-            if (e.code === 'KeyA') heading -= 0.05;
-            if (e.code === 'KeyD') heading += 0.05;
-        }});
+        // Keyboard Logic
+        const keys = {{}};
+        document.addEventListener('keydown', (e) => {{ keys[e.code] = true; }});
+        document.addEventListener('keyup', (e) => {{ keys[e.code] = false; }});
 
+        // Game Loop (Smoother Physics)
         viewer.scene.preUpdate.addEventListener(() => {{
-            velocity *= 0.95; // Friction
-            lat += velocity * Math.cos(heading);
-            lon += velocity * Math.sin(heading);
+            if (keys['KeyW']) speed += 0.000005;
+            if (keys['KeyS']) speed -= 0.000005;
+            if (keys['KeyA']) heading -= 0.04;
+            if (keys['KeyD']) heading += 0.04;
+
+            speed *= 0.95; // Friction
+            lat += speed * Math.cos(heading);
+            lon += speed * Math.sin(heading);
             
             const newPos = Cesium.Cartesian3.fromDegrees(lon, lat, 0);
             carEntity.position = newPos;
