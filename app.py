@@ -1,16 +1,15 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(layout="wide", page_title="SPC 3D Pro")
+st.set_page_config(layout="wide", page_title="SPC Pro Drive")
 
-# --- 1. CONFIGURATION ---
-# Using your provided Cesium Ion Token
+# Your verified Cesium Ion Token
 CESIUM_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI3MjUwMTRjMC1mZmNjLTRiMGMtOTQ3Zi0zYjdhYTcxZWUyZWUiLCJpZCI6NDMxNjU4LCJpc3MiOiJodHRwczovL2lvbi5jZXNpdW0uY29tIiwiYXVkIjoidW5kZWZpbmVkX2RlZmF1bHQiLCJpYXQiOjE3Nzg3NzkwNzd9.Z6NvuvwPdtghJiUM9fcfIe1SaZXMBNu8tN_pCQTelxw"
 
-st.title("🏎️ SPC: WASD 3D Simulator")
-st.write("Click on the world, then use **W, A, S, D** to drive!")
+st.title("🏎️ SPC: Real-Physics Simulator")
+st.write("Click the map, then use **W, A, S, D** to drive. The car size is fixed to the ground.")
 
-# --- 2. THE ENGINE (HTML + JAVASCRIPT) ---
+# The Engine: HTML + JavaScript Bridge
 cesium_html = f"""
 <!DOCTYPE html>
 <html>
@@ -27,40 +26,39 @@ cesium_html = f"""
     <script>
         Cesium.Ion.defaultAccessToken = '{CESIUM_TOKEN}';
         
-        // Initialize Viewer
+        // 1. Setup World with Terrain (Asset ID 1)
         const viewer = new Cesium.Viewer('cesiumContainer', {{
             terrainProvider: Cesium.createWorldTerrain(),
             baseLayerPicker: false, animation: false, timeline: false,
-            sceneModePicker: false, navigationHelpButton: false, infoBox: false
+            sceneModePicker: false, infoBox: false
         }});
 
-        // Add Realistic OSM Buildings (Asset 96188)
-        const buildings = viewer.scene.primitives.add(Cesium.createOsmBuildings({{
-            style: new Cesium.Cesium3DTileStyle({{
-                color: "color('grey', 1.0)",
-                show: true
-            }})
+        // 2. Add 3D Buildings with shading (Asset ID 96188)
+        viewer.scene.primitives.add(Cesium.createOsmBuildings({{
+            style: new Cesium.Cesium3DTileStyle({{ color: "color('grey', 1.0)" }})
         }}));
 
-        // Vehicle State
+        // 3. Setup Physics State
         let lon = 31.2357; 
         let lat = 30.0444;
         let heading = 0;
-        const speed = 0.00003;
+        const speed = 0.00002;
 
-        // Create the 3D Car
+        // 4. Create the Fixed-Size Car (NFS/GeoFS Style)
         const carEntity = viewer.entities.add({{
             position: Cesium.Cartesian3.fromDegrees(lon, lat, 0),
             model: {{ 
                 uri: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMilkTruck/glTF-Binary/CesiumMilkTruck.glb',
-                minimumPixelSize: 128 
+                minimumPixelSize: 0, // This makes it NOT resize when zooming
+                scale: 1.0,           // Fixed real-world size
+                heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND
             }}
         }});
 
-        // Camera follow car
+        // 5. Follow Camera (Locked View)
         viewer.trackedEntity = carEntity;
 
-        // KEYBOARD CONTROLLER
+        // 6. WASD Controller Logic
         document.addEventListener('keydown', (e) => {{
             if (e.code === 'KeyW') {{
                 lat += speed * Math.cos(heading);
@@ -70,17 +68,13 @@ cesium_html = f"""
                 lat -= speed * Math.cos(heading);
                 lon -= speed * Math.sin(heading);
             }}
-            if (e.code === 'KeyA') heading -= 0.1;
-            if (e.code === 'KeyD') heading += 0.1;
+            if (e.code === 'KeyA') heading -= 0.05;
+            if (e.code === 'KeyD') heading += 0.05;
 
-            // Update Position
             const newPos = Cesium.Cartesian3.fromDegrees(lon, lat, 0);
             carEntity.position = newPos;
-
-            // Update Orientation (Turning)
             carEntity.orientation = Cesium.Transforms.headingPitchRollQuaternion(
-                newPos, 
-                new Cesium.HeadingPitchRoll(heading, 0, 0)
+                newPos, new Cesium.HeadingPitchRoll(heading, 0, 0)
             );
         }});
     </script>
@@ -88,7 +82,6 @@ cesium_html = f"""
 </html>
 """
 
-# --- 3. RENDER ---
 components.html(cesium_html, height=800)
 
-st.sidebar.markdown("### 🎮 Controls\\n- **W:** Forward\\n- **S:** Backward\\n- **A/D:** Turn Left/Right\\n\\n*Note: You must click the map area once for WASD to start working.*")
+st.sidebar.markdown("### 🎮 Controls\\n- **W/S:** Drive\\n- **A/D:** Steer\\n- Click map to focus.")
