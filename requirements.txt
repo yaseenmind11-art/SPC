@@ -1,4 +1,2 @@
 streamlit
-pydeck
-pandas
-numpy
+streamlit-cesium
