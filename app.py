@@ -1,130 +1,78 @@
 import streamlit as st
 from streamlit_cesium import st_cesium
-import pandas as pd
-import json
 
-# --- 1. SETTINGS & TITLE ---
-st.set_page_config(layout="wide", page_title="SPC: Real-Drive Sim")
+st.set_page_config(layout="wide", page_title="SPC 3D Pro")
 
-# GO TO YOUR CESIUM DASHBOARD -> ACCESS TOKENS to get this string
-CESIUM_TOKEN = "PASTE_YOUR_CESIUM_ACCESS_TOKEN_HERE"
+# --- 1. ACCESS TOKEN ---
+CESIUM_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI3MjUwMTRjMC1mZmNjLTRiMGMtOTQ3Zi0zYjdhYTcxZWUyZWUiLCJpZCI6NDMxNjU4LCJpc3MiOiJodHRwczovL2lvbi5jZXNpdW0uY29tIiwiYXVkIjoidW5kZWZpbmVkX2RlZmF1bHQiLCJpYXQiOjE3Nzg3NzkwNzd9.Z6NvuvwPdtghJiUM9fcfIe1SaZXMBNu8tN_pCQTelxw"
 
-st.title("🏎️ SPC: Real-Drive 3D Simulator")
-st.write("Using Realistic OSM Facades and Terrain. Control vehicle with WASD Keys.")
+st.title("🏎️ SPC: Advanced 3D Simulator")
+st.write("Click on the map once, then use **WASD** to drive through the city!")
 
-# --- 2. GAME STATE (Position, Heading) ---
-# We keep track of the car's orientation in degrees.
-if 'heading' not in st.session_state:
-    st.session_state.heading = 0 # Degrees (0=North)
-
-# Cairo Starting Coordinates from previous steps
-LAT = 30.0444
-LON = 31.2357
-
-# --- 3. THE GEFS ADVANCED ENGINE (JavaScript Keyboard Interface) ---
-# This JavaScript code runs in the browser and connects WASD to the car movement.
-
-cesium_javascript = f"""
+# --- 2. THE GEFS ENGINE (JavaScript WASD + Textures) ---
+cesium_js = f"""
     Cesium.Ion.defaultAccessToken = '{CESIUM_TOKEN}';
     
-    // 1. Initialize the World (Realistic Mode)
+    // Setup Viewer
     const viewer = new Cesium.Viewer('cesiumContainer', {{
         terrainProvider: Cesium.createWorldTerrain(),
         baseLayerPicker: false,
         animation: false,
-        timeline: false,
-        geocoder: true,
-        skyAtmosphere: true, # Add realistic sky
+        timeline: false
     }});
 
-    // 2. Add THE REALISTIC BUILDINGS (Replaces White Blocks)
-    // We add textures (facades) to the buildings, just like in GeoFS
-    viewer.scene.primitives.add(Cesium.createOsmBuildings({{
+    // Add Realistic Textured Buildings (GeoFS Style)
+    const buildings = viewer.scene.primitives.add(Cesium.createOsmBuildings({{
         style: new Cesium.Cesium3DTileStyle({{
-            color: "color('grey', 1.0)", # Set base color
+            color: "color('grey', 1.0)",
             show: true
         }})
     }}));
 
-    // 3. Setup the 3D CAR Model and follow cam
-    // This uses a public glTF sports car model
-    const startPosition = Cesium.Cartesian3.fromDegrees({LON}, {LAT}, 0);
+    // Add 3D Car Model
+    const carPos = Cesium.Cartesian3.fromDegrees(31.2357, 30.0444, 0);
     const carEntity = viewer.entities.add({{
-        name: 'Player Car',
-        position: startPosition,
+        position: carPos,
         model: {{
-            uri: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/BoxAnimated/glTF-Binary/BoxAnimated.glb', # Change to a sports car GLB link for final look
-            minimumPixelSize: 128,
-            maximumScale: 20000,
-        }},
+            uri: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMilkTruck/glTF-Binary/CesiumMilkTruck.glb',
+            minimumPixelSize: 128
+        }}
     }});
 
-    // GTA / GeoFS Camera follows the car
     viewer.trackedEntity = carEntity;
 
-    // 4. WASD KEYBOARD CONTROLS (The Math)
-    const moveAmount = 0.000005; // Set speed (Latitude/Longitude degrees per move)
-    const turnAmount = Cesium.Math.toRadians(5.0); // Turning angle (radians)
+    // WASD Logic
+    let heading = 0;
+    const speed = 0.00001;
 
-    let headingRads = Cesium.Math.toRadians({st.session_state.heading});
-
-    // We use a handler to listen for 'keydown' events
-    document.addEventListener('keydown', function(e) {{
-        let position = carEntity.position.getValue(viewer.clock.currentTime);
-        let cartographic = Cesium.Cartographic.fromCartesian(position);
+    document.addEventListener('keydown', (e) => {{
+        const pos = carEntity.position.getValue(viewer.clock.currentTime);
+        const cart = Cesium.Cartographic.fromCartesian(pos);
         
-        // --- CONTROL LOGIC ---
-        
-        // Forward (W)
-        if (e.key.toLowerCase() === 'w') {{
-            cartographic.latitude += moveAmount * Math.cos(headingRads);
-            cartographic.longitude += moveAmount * Math.sin(headingRads);
+        if (e.code === 'KeyW') {{
+            cart.latitude += speed * Math.cos(heading);
+            cart.longitude += speed * Math.sin(heading);
         }}
-        // Backward (S)
-        if (e.key.toLowerCase() === 's') {{
-            cartographic.latitude -= moveAmount * Math.cos(headingRads);
-            cartographic.longitude -= moveAmount * Math.sin(headingRads);
+        if (e.code === 'KeyS') {{
+            cart.latitude -= speed * Math.cos(heading);
+            cart.longitude -= speed * Math.sin(heading);
         }}
-        // Turn Left (A)
-        if (e.key.toLowerCase() === 'a') {{
-            headingRads -= turnAmount;
-        }}
-        // Turn Right (D)
-        if (e.key.toLowerCase() === 'd') {{
-            headingRads += turnAmount;
-        }}
+        if (e.code === 'KeyA') heading -= 0.1;
+        if (e.code === 'KeyD') heading += 0.1;
 
-        // --- UPDATE ---
-        // Update the car's model position and orientation (Heading)
         carEntity.position = Cesium.Cartesian3.fromDegrees(
-            Cesium.Math.toDegrees(cartographic.longitude),
-            Cesium.Math.toDegrees(cartographic.latitude),
+            Cesium.Math.toDegrees(cart.longitude),
+            Cesium.Math.toDegrees(cart.latitude),
             0
         );
-
-        // This applies the 3D rotation to the model
-        const orientation = Cesium.Transforms.headingPitchRollQuaternion(
-            position,
-            new Cesium.HeadingPitchRoll(headingRads, 0, 0)
+        carEntity.orientation = Cesium.Transforms.headingPitchRollQuaternion(
+            carEntity.position.getValue(viewer.clock.currentTime),
+            new Cesium.HeadingPitchRoll(heading, 0, 0)
         );
-        carEntity.orientation = orientation;
-
-    }}, false);
+    }});
 """
 
-# --- 4. RENDER SIMULATOR (Streamlit-Cesium Bridge) ---
-st_cesium(
-    id="spc_real_sim",
-    javascript=cesium_javascript,
-    height=800
-)
+# --- 3. RENDER ---
+st_cesium(id="spc_game", javascript=cesium_js, height=750)
 
-# --- 5. INTERFACE (Sidebar HUD) ---
-st.sidebar.markdown(f"""
-### 🕹️ Real-Drive HUD
-**System:** Cesium + FDM Engine  
-**WASD:** Active ✅  
-**Follow Cam:** Locked ✅  
-
-You must click inside the 3D game window once to activate the keyboard listener. Then you can drive!
-""")
+st.sidebar.markdown("### Controls\\n**W** - Forward\\n**S** - Reverse\\n**A/D** - Steer")
