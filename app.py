@@ -1,78 +1,94 @@
 import streamlit as st
-from streamlit_cesium import st_cesium
+import streamlit.components.v1 as components
 
 st.set_page_config(layout="wide", page_title="SPC 3D Pro")
 
-# --- 1. ACCESS TOKEN ---
+# --- 1. CONFIGURATION ---
+# Using your provided Cesium Ion Token
 CESIUM_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI3MjUwMTRjMC1mZmNjLTRiMGMtOTQ3Zi0zYjdhYTcxZWUyZWUiLCJpZCI6NDMxNjU4LCJpc3MiOiJodHRwczovL2lvbi5jZXNpdW0uY29tIiwiYXVkIjoidW5kZWZpbmVkX2RlZmF1bHQiLCJpYXQiOjE3Nzg3NzkwNzd9.Z6NvuvwPdtghJiUM9fcfIe1SaZXMBNu8tN_pCQTelxw"
 
-st.title("🏎️ SPC: Advanced 3D Simulator")
-st.write("Click on the map once, then use **WASD** to drive through the city!")
+st.title("🏎️ SPC: WASD 3D Simulator")
+st.write("Click on the world, then use **W, A, S, D** to drive!")
 
-# --- 2. THE GEFS ENGINE (JavaScript WASD + Textures) ---
-cesium_js = f"""
-    Cesium.Ion.defaultAccessToken = '{CESIUM_TOKEN}';
-    
-    // Setup Viewer
-    const viewer = new Cesium.Viewer('cesiumContainer', {{
-        terrainProvider: Cesium.createWorldTerrain(),
-        baseLayerPicker: false,
-        animation: false,
-        timeline: false
-    }});
-
-    // Add Realistic Textured Buildings (GeoFS Style)
-    const buildings = viewer.scene.primitives.add(Cesium.createOsmBuildings({{
-        style: new Cesium.Cesium3DTileStyle({{
-            color: "color('grey', 1.0)",
-            show: true
-        }})
-    }}));
-
-    // Add 3D Car Model
-    const carPos = Cesium.Cartesian3.fromDegrees(31.2357, 30.0444, 0);
-    const carEntity = viewer.entities.add({{
-        position: carPos,
-        model: {{
-            uri: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMilkTruck/glTF-Binary/CesiumMilkTruck.glb',
-            minimumPixelSize: 128
-        }}
-    }});
-
-    viewer.trackedEntity = carEntity;
-
-    // WASD Logic
-    let heading = 0;
-    const speed = 0.00001;
-
-    document.addEventListener('keydown', (e) => {{
-        const pos = carEntity.position.getValue(viewer.clock.currentTime);
-        const cart = Cesium.Cartographic.fromCartesian(pos);
+# --- 2. THE ENGINE (HTML + JAVASCRIPT) ---
+cesium_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.105/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <style>
+        html, body, #cesiumContainer {{ width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background: #000; }}
+        .cesium-viewer-bottom {{ display: none !important; }}
+    </style>
+</head>
+<body>
+    <div id="cesiumContainer"></div>
+    <script>
+        Cesium.Ion.defaultAccessToken = '{CESIUM_TOKEN}';
         
-        if (e.code === 'KeyW') {{
-            cart.latitude += speed * Math.cos(heading);
-            cart.longitude += speed * Math.sin(heading);
-        }}
-        if (e.code === 'KeyS') {{
-            cart.latitude -= speed * Math.cos(heading);
-            cart.longitude -= speed * Math.sin(heading);
-        }}
-        if (e.code === 'KeyA') heading -= 0.1;
-        if (e.code === 'KeyD') heading += 0.1;
+        // Initialize Viewer
+        const viewer = new Cesium.Viewer('cesiumContainer', {{
+            terrainProvider: Cesium.createWorldTerrain(),
+            baseLayerPicker: false, animation: false, timeline: false,
+            sceneModePicker: false, navigationHelpButton: false, infoBox: false
+        }});
 
-        carEntity.position = Cesium.Cartesian3.fromDegrees(
-            Cesium.Math.toDegrees(cart.longitude),
-            Cesium.Math.toDegrees(cart.latitude),
-            0
-        );
-        carEntity.orientation = Cesium.Transforms.headingPitchRollQuaternion(
-            carEntity.position.getValue(viewer.clock.currentTime),
-            new Cesium.HeadingPitchRoll(heading, 0, 0)
-        );
-    }});
+        // Add Realistic OSM Buildings (Asset 96188)
+        const buildings = viewer.scene.primitives.add(Cesium.createOsmBuildings({{
+            style: new Cesium.Cesium3DTileStyle({{
+                color: "color('grey', 1.0)",
+                show: true
+            }})
+        }}));
+
+        // Vehicle State
+        let lon = 31.2357; 
+        let lat = 30.0444;
+        let heading = 0;
+        const speed = 0.00003;
+
+        // Create the 3D Car
+        const carEntity = viewer.entities.add({{
+            position: Cesium.Cartesian3.fromDegrees(lon, lat, 0),
+            model: {{ 
+                uri: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMilkTruck/glTF-Binary/CesiumMilkTruck.glb',
+                minimumPixelSize: 128 
+            }}
+        }});
+
+        // Camera follow car
+        viewer.trackedEntity = carEntity;
+
+        // KEYBOARD CONTROLLER
+        document.addEventListener('keydown', (e) => {{
+            if (e.code === 'KeyW') {{
+                lat += speed * Math.cos(heading);
+                lon += speed * Math.sin(heading);
+            }}
+            if (e.code === 'KeyS') {{
+                lat -= speed * Math.cos(heading);
+                lon -= speed * Math.sin(heading);
+            }}
+            if (e.code === 'KeyA') heading -= 0.1;
+            if (e.code === 'KeyD') heading += 0.1;
+
+            // Update Position
+            const newPos = Cesium.Cartesian3.fromDegrees(lon, lat, 0);
+            carEntity.position = newPos;
+
+            // Update Orientation (Turning)
+            carEntity.orientation = Cesium.Transforms.headingPitchRollQuaternion(
+                newPos, 
+                new Cesium.HeadingPitchRoll(heading, 0, 0)
+            );
+        }});
+    </script>
+</body>
+</html>
 """
 
 # --- 3. RENDER ---
-st_cesium(id="spc_game", javascript=cesium_js, height=750)
+components.html(cesium_html, height=800)
 
-st.sidebar.markdown("### Controls\\n**W** - Forward\\n**S** - Reverse\\n**A/D** - Steer")
+st.sidebar.markdown("### 🎮 Controls\\n- **W:** Forward\\n- **S:** Backward\\n- **A/D:** Turn Left/Right\\n\\n*Note: You must click the map area once for WASD to start working.*")
