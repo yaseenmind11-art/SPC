@@ -84,3 +84,8 @@ st.write(f"**Status:** {g['mode']} | **Speed:** {g['speed']} km/h | **Altitude:*
 if run_engine:
     time.sleep(0.05)
     st.rerun()
+
+const tileset = viewer.scene.primitives.add(
+  await Cesium.Cesium3DTileset.fromIonAssetId(96188),
+);
+
